@@ -22,6 +22,7 @@ LIBATTR = @libattr@
 LIBGDBM = @libgdbm@
 LIBUUID = @libuuid@
 LIBHANDLE = @libhdl@
+LIBDM = @libdm@
 LIBTEST = $(TOPDIR)/lib/libtest.la
 
 PKG_NAME        = @pkg_name@
@@ -58,6 +59,7 @@ RPM_VERSION     = @rpm_version@
 ENABLE_SHARED = @enable_shared@
 HAVE_DB = @have_db@
 HAVE_AIO = @have_aio@
+HAVE_FALLOCATE = @have_fallocate@
 HAVE_DMAPI = @have_dmapi@
 HAVE_ATTR_LIST = @have_attr_list@
 HAVE_FIEMAP = @have_fiemap@

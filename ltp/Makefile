@@ -27,7 +27,13 @@ LCFLAGS += -DAIO
 LLDLIBS += -laio -lpthread
 endif
 
+ifeq ($(HAVE_FALLOCATE), true)
+LCFLAGS += -DFALLOCATE
+endif
+
 default: depend $(TARGETS)
+
+depend: .dep
 
 include $(BUILDRULES)
 

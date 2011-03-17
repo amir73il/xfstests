@@ -1,5 +1,20 @@
 #
-# Copyright (c) 2000-2008 Silicon Graphics, Inc.  All Rights Reserved.
+# Copyright (C) 2000-2008, 2011 SGI  All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
 #
 
 ifeq ("$(origin V)", "command line")
@@ -30,29 +45,24 @@ LSRCFILES = configure configure.in aclocal.m4 README VERSION
 LDIRT = config.log .ltdep .dep config.status config.cache confdefs.h \
 	conftest* check.log check.time
 
-ifeq ($(HAVE_DMAPI), true)
-DMAPI_MAKEFILE = dmapi/Makefile
-endif
 
 LIB_SUBDIRS = include lib
 TOOL_SUBDIRS = ltp src m4
+ifeq ($(HAVE_DMAPI), true)
+TOOL_SUBDIRS += dmapi
+endif
 
 SUBDIRS = $(LIB_SUBDIRS) $(TOOL_SUBDIRS)
 
-default: include/builddefs include/config.h $(DMAPI_MAKEFILE) new remake check $(TESTS)
+default: include/builddefs $(DMAPI_MAKEFILE) $(TESTS)
 ifeq ($(HAVE_BUILDDEFS), no)
 	$(Q)$(MAKE) $(MAKEOPTS) $@
 else
 	$(Q)$(MAKE) $(MAKEOPTS) $(SUBDIRS)
-	# automake doesn't always support "default" target 
-	# so do dmapi make explicitly with "all"
-ifeq ($(HAVE_DMAPI), true)
-	$(Q)$(MAKE) $(MAKEOPTS) -C $(TOPDIR)/dmapi all
-endif
 endif
 
 # tool/lib dependencies
-src ltp: lib
+$(TOOL_SUBDIRS): $(LIB_SUBDIRS)
 
 ifeq ($(HAVE_BUILDDEFS), yes)
 include $(BUILDRULES)
@@ -60,25 +70,19 @@ else
 clean:  # if configure hasn't run, nothing to clean
 endif
 
-configure include/builddefs:
+configure: configure.in
 	autoheader
 	autoconf
+
+include/builddefs include/config.h: configure
 	./configure \
                 --libexecdir=/usr/lib \
                 --enable-lib64=yes
 
-include/config.h: include/builddefs
-## Recover from the removal of $@
-	@if test -f $@; then :; else \
-		rm -f include/builddefs; \
-		$(MAKE) $(AM_MAKEFLAGS) include/builddefs; \
-	fi
-
-$(DMAPI_MAKEFILE):
-	cd $(TOPDIR)/dmapi/ ; ./configure
-
 aclocal.m4::
 	aclocal --acdir=`pwd`/m4 --output=$@
+
+depend: include/builddefs $(addsuffix -depend,$(SUBDIRS))
 
 install: default $(addsuffix -install,$(SUBDIRS))
 	$(INSTALL) -m 755 -d $(PKG_LIB_DIR)
@@ -97,5 +101,5 @@ install-dev install-lib:
 	$(MAKE) $(MAKEOPTS) -C $* install
 
 realclean distclean: clean
-	rm -f $(LDIRT) $(CONFIGURE)
-	rm -rf autom4te.cache Logs
+	$(Q)rm -f $(LDIRT) $(CONFIGURE)
+	$(Q)rm -rf autom4te.cache Logs
