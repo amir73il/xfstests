@@ -45,11 +45,14 @@ randomize=false
 rm -f $tmp.list $tmp.tmp $tmp.sed
 
 # Autodetect fs type based on what's on $TEST_DEV
+if [ -z "$FSTYP" ]
+then
 if [ "$HOSTOS" == "Linux" ]
 then
     export FSTYP=`blkid -c /dev/null -s TYPE -o value $TEST_DEV`
 else
     export FSTYP=xfs
+fi
 fi
 
 for r
