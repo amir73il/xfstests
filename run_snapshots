@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if [ $# -lt 4 ] ; then
+	echo "usage: $0 <start> <end> <retain> <delay>"
+	exit 1
+fi
+
+START=$1
+END=$2
+RETAIN=$3
+DELAY=$4
+
+mkdir -p snapshots
+echo "$0 $*..." > snapshots/run_snapshots.log
+
+i=$START
+while [ $i -le $END ]  ; do
+	date >> snapshots/run_snapshots.log
+	ls -t /mnt/snapshots >> snapshots/run_snapshots.log
+	sudo next4 take $i >> snapshots/run_snapshots.log
+	[ $i -gt $RETAIN ] && sudo next4 remove $[ $i - $RETAIN ] >> snapshots/run_snapshots.log 
+	sleep $DELAY
+	i=$[ $i + 1 ]
+done 2>&1 | tee snapshots/run_snapshots.err
