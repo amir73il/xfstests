@@ -65,7 +65,7 @@ _mount_opts()
     nfs)
 	export MOUNT_OPTIONS=$NFS_MOUNT_OPTIONS
 	;;
-    ext2|ext3|next3|ext4)
+    ext2|ext3|ext4|next3|next4)
 	# acls & xattrs aren't turned on by default on ext$FOO
 	export MOUNT_OPTIONS="-o acl,user_xattr $EXT_MOUNT_OPTIONS"
 	;;
@@ -925,7 +925,9 @@ _remount()
 #
 
 # If set, we remount ro instead of unmounting for fsck
-USE_REMOUNT=0
+if [ -z USE_REMOUNT ] ; then
+	USE_REMOUNT=1
+fi
 
 _umount_or_remount_ro()
 {
