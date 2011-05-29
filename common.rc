@@ -1028,7 +1028,7 @@ _check_generic_filesystem()
         mountpoint=`_umount_or_remount_ro $device`
     fi
 
-    fsck -t $FSTYP $FSCK_OPTIONS $device >$tmp.fsck 2>&1
+    fsck.$FSTYP $FSCK_OPTIONS $device >$tmp.fsck 2>&1
     if [ $? -ne 0 ]
     then
         echo "_check_generic_filesystem: filesystem on $device is inconsistent (see $seq.full)"
