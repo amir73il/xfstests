@@ -769,6 +769,24 @@ _require_loop()
     fi
 }
 
+# this test requires ext2 filesystem support
+#
+_require_ext2()
+{
+    if [ "$HOSTOS" != "Linux" ]
+    then
+	_notrun "This test requires linux for ext2 filesystem support"
+    fi
+
+    modprobe ext2 >/dev/null 2>&1
+    if grep ext2 /proc/filesystems >/dev/null 2>&1
+    then
+	:
+    else
+	_notrun "This test requires ext2 filesystem support"
+    fi
+}
+
 # this test requires that (large) loopback device files are not in use
 #
 _require_nobigloopfs()
@@ -795,6 +813,15 @@ _require_command()
 {
     [ -n "$1" ] && _cmd="$1" || _cmd="$2"
     [ -n "$1" -a -x "$1" ] || _notrun "$_cmd utility required, skipped this test"
+}
+
+# this test requires the projid32bit feature to be available in
+# mkfs.xfs
+#
+_require_projid32bit()
+{
+        _scratch_mkfs_xfs -f -i projid32bit=0 2>&1 >/dev/null \
+	   || _notrun "mkfs.xfs doesn't have projid32bit feature"
 }
 
 # this test requires that external log/realtime devices are not in use
