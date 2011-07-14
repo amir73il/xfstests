@@ -218,6 +218,29 @@ _filter_fiemap()
 	_coalesce_extents
 }
 
+# Filters fiemap output to only print the 
+# file offset column and whether or not
+# it is an extent or a hole
+_filter_hole_fiemap()
+{
+	awk --posix '
+		$3 ~ /hole/ {
+			print $1, $2, $3; 
+			next;
+		}   
+		$5 ~ /0x[[:digit:]]+/ {
+			print $1, $2, "extent";
+		}' |
+	_coalesce_extents
+}
+
+
+# Prints the md5 checksum of a given file
+_md5_checksum()
+{
+	md5sum $1 | cut -d ' ' -f1
+}
+
 _filter_bmap()
 {
 	awk '
@@ -305,6 +328,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	2. into allocated space"
 	if [ "$remove_testfile" ]; then
@@ -315,6 +339,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	3. into unwritten space"
 	if [ "$remove_testfile" ]; then
@@ -325,6 +350,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	4. hole -> data"
 	if [ "$remove_testfile" ]; then
@@ -335,6 +361,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	5. hole -> unwritten"
 	if [ "$remove_testfile" ]; then
@@ -345,6 +372,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	6. data -> hole"
 	if [ "$remove_testfile" ]; then
@@ -355,6 +383,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	7. data -> unwritten"
 	if [ "$remove_testfile" ]; then
@@ -366,6 +395,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	8. unwritten -> hole"
 	if [ "$remove_testfile" ]; then
@@ -376,6 +406,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	9. unwritten -> data"
 	if [ "$remove_testfile" ]; then
@@ -387,6 +418,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	10. hole -> data -> hole"
 	if [ "$remove_testfile" ]; then
@@ -397,6 +429,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 12k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	11. data -> hole -> data"
 	if [ "$remove_testfile" ]; then
@@ -410,6 +443,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 12k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	12. unwritten -> data -> unwritten"
 	if [ "$remove_testfile" ]; then
@@ -421,6 +455,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 12k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	13. data -> unwritten -> data"
 	if [ "$remove_testfile" ]; then
@@ -433,6 +468,7 @@ _test_generic_punch()
 		-c "$zero_cmd 4k 12k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	14. data -> hole @ EOF"
 	rm -f $testfile
@@ -441,6 +477,7 @@ _test_generic_punch()
 		-c "$zero_cmd 12k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	15. data -> hole @ 0"
 	if [ "$remove_testfile" ]; then
@@ -451,6 +488,7 @@ _test_generic_punch()
 		-c "$zero_cmd 0k 8k" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 	echo "	16. data -> cache cold ->hole"
 	if [ "$remove_testfile" ]; then
@@ -470,6 +508,7 @@ _test_generic_punch()
 	diff $testfile $testfile.2
 	[ $? -ne 0 ] && die_now
 	rm -f $testfile.2
+	_md5_checksum $testfile
 
 	echo "	17. data -> hole in single block file"
 	if [ "$remove_testfile" ]; then
@@ -481,5 +520,6 @@ _test_generic_punch()
 		-c "$zero_cmd 128 128" \
 		-c "$map_cmd -v" $testfile | $filter_cmd
 	[ $? -ne 0 ] && die_now
+	_md5_checksum $testfile
 
 }
