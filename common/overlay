@@ -369,6 +369,8 @@ _repair_overlay_scratch_fs()
 # mount paths via UNIONMOUNT_* environment variables.
 _require_unionmount_testsuite()
 {
+	local opts=( $* )
+
 	[ -x "$UNIONMOUNT_TESTSUITE/run" ] || \
 		_notrun "unionmount testsuite required."
 
@@ -376,6 +378,11 @@ _require_unionmount_testsuite()
 	local usage=`UNIONMOUNT_BASEDIR=_ "$UNIONMOUNT_TESTSUITE/run" 2>&1`
 	echo $usage | grep -wq "UNIONMOUNT_BASEDIR" || \
 		_notrun "newer version of unionmount testsuite required."
+
+	for opt in ${opts[*]}; do
+		echo $usage | grep -wq "${opt}" || \
+			_notrun "unknown unionmount testsuite option '--${opt}'"
+	done
 
 	[ -n "$OVERLAY_MOUNT_OPTIONS" ] || return
 	# If custom overlay mount options are used
@@ -424,4 +431,21 @@ _unionmount_testsuite_cleanup()
 	cd $UNIONMOUNT_TESTSUITE
 	echo "run --clean-up ..." >> $seqres.full
 	./run --clean-up >> $seqres.full 2>&1
+}
+
+# This test requires support for overlayfs snapshot mount
+_require_overlay_snapshot()
+{
+	modprobe overlay >/dev/null 2>&1
+	if (echo $OVERLAY_MOUNT_OPTIONS | grep -q 'metacopy=on') ; then
+		# Require snapshot fs mount with mount option metacopy=on
+		grep -qw snapshot /proc/filesystems ||
+			_notrun "this test requires snapshot fs support"
+	elif [ "$FSTYP" = overlay ]; then
+		# Require overlay fs mount with 'watch' mount option
+		_scratch_mkfs > /dev/null 2>&1
+		_try_scratch_mount -o watch || \
+			_notrun "overlay snapshot feature is not supported"
+		_scratch_unmount
+	fi
 }

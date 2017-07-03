@@ -1,0 +1,29 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2020 CTERA Networks. All Rights Reserved.
+#
+# FS QA Test 201
+#
+# Run unionmount testsuite to verify correctness
+# with up to two concurrent snapshots
+#
+. ./common/preamble
+_begin_fstest auto snapshot rotate
+
+_register_cleanup "_unionmount_testsuite_cleanup"
+
+# Import common functions.
+. ./common/filter
+
+# real QA test starts here
+
+_supported_fs overlay
+_require_overlay_snapshot
+_require_unionmount_testsuite sn
+
+_unionmount_testsuite_run --sn=1 --samefs --verify
+
+# success, all done
+echo "Silence is golden"
+status=0
+exit
