@@ -369,6 +369,8 @@ _repair_overlay_scratch_fs()
 # mount paths via UNIONMOUNT_* environment variables.
 _require_unionmount_testsuite()
 {
+	local opts=( $* )
+
 	[ -x "$UNIONMOUNT_TESTSUITE/run" ] || \
 		_notrun "unionmount testsuite required."
 
@@ -376,6 +378,11 @@ _require_unionmount_testsuite()
 	local usage=`UNIONMOUNT_BASEDIR=_ "$UNIONMOUNT_TESTSUITE/run" 2>&1`
 	echo $usage | grep -wq "UNIONMOUNT_BASEDIR" || \
 		_notrun "newer version of unionmount testsuite required."
+
+	for opt in ${opts[*]}; do
+		echo $usage | grep -wq "${opt}" || \
+			_notrun "unknown unionmount testsuite option '--${opt}'"
+	done
 }
 
 _unionmount_testsuite_run()
@@ -416,4 +423,12 @@ _unionmount_testsuite_cleanup()
 	cd $UNIONMOUNT_TESTSUITE
 	echo "run --clean-up ..." >> $seqres.full
 	./run --clean-up >> $seqres.full 2>&1
+}
+
+# this test requires support for overlayfs snapshot mount (-t snapshot)
+_require_overlay_snapshot()
+{
+	modprobe overlay >/dev/null 2>&1
+	grep -qw snapshot /proc/filesystems ||
+		_notrun "this test requires overlayfs snapshot support"
 }
