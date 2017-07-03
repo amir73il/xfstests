@@ -98,3 +98,11 @@
 115 auto union rotate nested samefs xino
 116 auto union rotate nested nonsamefs
 117 auto union rotate nested nonsamefs xino
+200 auto quick snapshot
+201 auto snapshot rotate
+202 auto snapshot rotate
+203 auto snapshot rotate
+210 auto snapshot cycle
+211 auto snapshot cycle rotate
+212 auto snapshot cycle rotate
+213 auto snapshot cycle rotate
