@@ -1,0 +1,107 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2019 CTERA Networks. All Rights Reserved.
+#
+# FS QA Test 066
+#
+# Test mount error cases with exclusive directories and
+# shutdown ioctl
+#
+# This test expects EBUSY when trying to mount overlay with:
+# - Upper dir is in-use by another overlay mount
+# - Work dir is in-use by another overlay mount
+# and expects success on retry after the other overlay mount
+# has been shutdown.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$seq
+echo "QA output created by $seq"
+
+here=`pwd`
+tmp=/tmp/$$
+status=1	# failure is the default!
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+_cleanup()
+{
+	cd /
+	rm -f $tmp.*
+	# unmount the two extra mounts in case they did not fail
+	$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
+	$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
+}
+
+# get standard environment, filters and checks
+. ./common/rc
+. ./common/filter
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+_supported_fs overlay
+_supported_os Linux
+# Use non-default scratch underlying overlay dirs, we need to check
+# them explicity after test.
+_require_scratch_nocheck
+_require_scratch_feature index
+_require_test_program godown
+
+# Remove all files from previous tests
+_scratch_mkfs
+
+# Create multiple lowerdirs, upperdirs and workdirs
+lowerdir=$OVL_BASE_SCRATCH_MNT/lower
+lowerdir2=$OVL_BASE_SCRATCH_MNT/lower2
+upperdir=$OVL_BASE_SCRATCH_MNT/upper
+upperdir2=$OVL_BASE_SCRATCH_MNT/upper2
+workdir=$OVL_BASE_SCRATCH_MNT/workdir
+workdir2=$OVL_BASE_SCRATCH_MNT/workdir2
+mkdir -p $lowerdir $lowerdir2 $upperdir $upperdir2 $workdir $workdir2
+
+testfile=$SCRATCH_MNT/foo
+
+# Mount overlay with lowerdir, upperdir, workdir
+_overlay_mount_dirs $lowerdir $upperdir $workdir \
+		    overlay $SCRATCH_MNT
+
+echo 123 > $testfile
+
+echo "Try mount with locked upper/work dirs"
+# Try to mount another overlay with the same upperdir
+# with index=on - expect EBUSY
+_overlay_mount_dirs $lowerdir $upperdir $workdir2 \
+	    overlay2 $SCRATCH_MNT -oindex=on 2>&1 | _filter_busy_mount
+
+# Try to mount another overlay with the same workdir
+# with index=on - expect EBUSY
+_overlay_mount_dirs $lowerdir2 $upperdir2 $workdir \
+	    overlay3 $SCRATCH_MNT -oindex=on 2>&1 | _filter_busy_mount
+
+echo "Retry after shutdown"
+# Do not confuse this with _scratch_shutdown which shuts down the
+# base fs in an overlay test. This shuts down the overlay mount.
+$here/src/godown $SCRATCH_MNT || \
+	_notrun "overlay does not support shutdown"
+
+# Try to mount another overlay with the same upperdir
+# after shutdown old mount - expect success
+_overlay_mount_dirs $lowerdir $upperdir $workdir2 \
+	    overlay4 $SCRATCH_MNT -oindex=on && \
+	    $UMOUNT_PROG $SCRATCH_MNT
+
+# Try to mount another overlay with the same workdir
+# after shutdown old mount - expect success
+_overlay_mount_dirs $lowerdir2 $upperdir2 $workdir \
+	    overlay5 $SCRATCH_MNT -oindex=on && \
+	    $UMOUNT_PROG $SCRATCH_MNT
+
+# expect EIO from shutdown fs
+cat $testfile 2>&1 | _filter_scratch
+
+# check overlayfs
+_overlay_check_scratch_dirs $lowerdir $upperdir $workdir
+
+# success, all done
+status=0
+exit
