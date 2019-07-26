@@ -19,3 +19,11 @@ mount: device already mounted or mount point busy
 Overlapping with workdir of another instance (index=off)
 Overlapping upperdir/lowerdir after mount
 find: 'SCRATCH_DEV/mnt.2/upper': Too many levels of symbolic links
+Conflicting nested lower layer below
+mount: Too many levels of symbolic links
+Conflicting nested lower layer above
+mount: Too many levels of symbolic links
+Overlapping nested lower layer below
+find: 'SCRATCH_MNT/lower': Too many levels of symbolic links
+Overlapping nested lower layer above
+find: 'SCRATCH_MNT/lower': Too many levels of symbolic links

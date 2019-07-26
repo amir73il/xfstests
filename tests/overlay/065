@@ -168,6 +168,43 @@ mv $upperdir $lowerdir/
 # Lookup files in overlay mount with overlapping layers -
 # expect ELOOP when upper layer root is found in lower layer
 find $mnt2/upper 2>&1 | _filter_scratch
+$UMOUNT_PROG $mnt2 2>/dev/null
+
+rm -rf $upperdir2 $workdir2
+mkdir -p $upperdir2 $workdir2
+
+# Mount overlay to be used as nested lower
+_overlay_mount_dirs $lowerdir $upperdir2 $workdir2 overlay $mnt2
+
+# Try to mount an overlay with same nested lower layer below - expect ELOOP
+echo "Conflicting nested lower layer below"
+$MOUNT_PROG -t overlay $OVL_BASE_SCRATCH_MNT $SCRATCH_MNT \
+	-oro,lowerdir=$lowerdir:$mnt2 \
+	2>&1 | _filter_error_mount
+$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
+
+# Try to mount an overlay with same nested lower layer above - expect ELOOP
+echo "Conflicting nested lower layer above"
+$MOUNT_PROG -t overlay $OVL_BASE_SCRATCH_MNT $SCRATCH_MNT \
+	-oro,lowerdir=$mnt2:$lowerdir \
+	2>&1 | _filter_error_mount
+$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
+
+# Try to mount an overlay with overlapping nested lower layers - expect ELOOP
+echo "Overlapping nested lower layer below"
+$MOUNT_PROG -t overlay $OVL_BASE_SCRATCH_MNT $SCRATCH_MNT \
+	-oro,lowerdir=$basedir:$mnt2 \
+	2>&1 | _filter_error_mount
+find $SCRATCH_MNT/lower 2>&1 | _filter_scratch
+$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
+
+# Try to mount an overlay with overlapping nested lower layers - expect ELOOP
+echo "Overlapping nested lower layer above"
+$MOUNT_PROG -t overlay $OVL_BASE_SCRATCH_MNT $SCRATCH_MNT \
+	-o ro,lowerdir=$mnt2:$basedir \
+	2>&1 | _filter_error_mount
+find $SCRATCH_MNT/lower 2>&1 | _filter_scratch
+$UMOUNT_PROG $SCRATCH_MNT 2>/dev/null
 
 # success, all done
 status=0
