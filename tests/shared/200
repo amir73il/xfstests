@@ -1,0 +1,109 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2020 CTERA Networks. All Rights Reserved.
+#
+# FS QA Test No. 200
+#
+# Test durability of change tracking by overlayfs snapshot
+#
+# This is an overlayfs snapshot test that does NOT run with FSTYP=overlay
+# because FSTYP=overlay does not support flakey
+#
+# Overlayfs snapshot assumed that copy up involved fsync of new file which
+# implies "metadata barrier", so the parent directory must exist in snapshot
+# after crash.  That is not true for a change tracking snapshot which only
+# records the parent directory, so that means that modifications to file may
+# end up not being tracked in snapshot after a crash.
+#
+. ./common/preamble
+_begin_fstest auto quick snapshot metadata log
+
+# Override the default cleanup function.
+_cleanup()
+{
+	$UMOUNT_PROG $snapmnt 2>/dev/null
+	_cleanup_flakey
+}
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+# Import common functions.
+. ./common/filter
+. ./common/dmflakey
+. ./common/overlay
+
+# In ext4/xfs fsync of new file implies "metadata barrier"
+_supported_fs ext4 xfs
+_require_scratch
+_require_dm_target flakey
+
+_scratch_mkfs >> $seqres.full 2>&1
+_require_metadata_journaling $SCRATCH_DEV
+_init_flakey
+_mount_flakey
+
+# This is NOT a test run with FSTYP=overlay, which does not support flakey
+# Setup an overlay snapshot over scratch fs
+snapmnt=$SCRATCH_MNT/union/s/0
+lowerdir=$SCRATCH_MNT/union/l
+upperdir=$SCRATCH_MNT/union/0/u
+workdir=$SCRATCH_MNT/union/0/w
+indexdir=$workdir/index
+testdir=a/dir100/pop
+testfile=$testdir/b
+
+mkdir -p $lowerdir/$testdir $upperdir $workdir $snapmnt
+echo "Old data" > $lowerdir/$testfile
+
+$MOUNT_PROG -t overlay snapshot $snapmnt \
+	-o"lowerdir=$lowerdir,upperdir=$upperdir,workdir=$workdir,watch" 2>/dev/null || \
+	_notrun "overlayfs snapshot not supported"
+
+# Flush all dirty data/metadata and postpone the next periodic journal commit
+sync
+
+# Make a backup of unmodified file
+cp $lowerdir/$testfile $tmp.backup
+
+echo "data before write:" >> $seqres.full
+cat $lowerdir/$testfile >> $seqres.full
+
+# Modify file in-place for copy to snapshot
+# Fiemap triggers writeback of real file data pages without fsync
+# This simulates periodic writeback that happens before periodic journal commit
+# and before a crash that can leave the original file data modified without any
+# change record in the snapshot.
+$XFS_IO_PROG -c "pwrite -S 65 0 5" -c "fiemap" $lowerdir/$testfile >> $seqres.full
+
+echo "index after write:" >> $seqres.full
+ls -l $indexdir >> $seqres.full
+
+echo "du -x after write:" >> $seqres.full
+du -x $snapmnt | tee -a $seqres.full | grep -q "[[:space:]]$snapmnt/$testdir$" || \
+	echo "$testdir not recorded in snapshot after write"
+
+_load_flakey_table $FLAKEY_DROP_WRITES
+$UMOUNT_PROG $snapmnt
+_flakey_drop_and_remount
+
+$MOUNT_PROG -t overlay snapshot $snapmnt \
+	-o"lowerdir=$lowerdir,upperdir=$upperdir,workdir=$workdir,watch"
+
+echo "data after crash:" >> $seqres.full
+cat $lowerdir/$testfile >> $seqres.full
+
+echo "index after crash:" >> $seqres.full
+ls -l $indexdir >> $seqres.full
+
+diff -q $lowerdir/$testfile $tmp.backup >> $seqres.full 2>&1
+[ $? != 0 ] || echo "File $testfile is unmodified after crash"
+
+echo "du -x after crash:" >> $seqres.full
+du -x $snapmnt | tee -a $seqres.full | grep -q "[[:space:]]$snapmnt/$testdir$" || \
+	echo "$testdir not recorded in snapshot after crash"
+
+$UMOUNT_PROG $snapmnt
+_unmount_flakey
+
+echo "Silence is golden"
+status=0
+exit
