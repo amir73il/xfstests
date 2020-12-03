@@ -20,11 +20,13 @@ status=1	# failure is the default!
 . ./common/rc
 . ./common/filter
 _supported_fs generic
-_require_scratch
-_require_block_device $SCRATCH_DEV
+_require_scratch_nocheck
+_disable_dmesg_check
+BLK_DEV=`_scratch_base_device`
+_require_block_device $BLK_DEV
 _require_fail_make_request
 
-SYSFS_BDEV=`_sysfs_dev $SCRATCH_DEV`
+SYSFS_BDEV=`_sysfs_dev $BLK_DEV`
 
 allow_fail_make_request()
 {
@@ -57,90 +59,25 @@ stop_fail_scratch_dev()
 
 _cleanup()
 {
-    poweron_scratch_dev
     disallow_fail_make_request
     rm -f $tmp.*
 }
-trap "_cleanup; exit \$status" 1 2 3 15
+trap "_cleanup; exit \$status" 0 1 2 3 15
 
 RUN_TIME=$((20+10*$TIME_FACTOR))
 NUM_JOBS=$((4*LOAD_FACTOR))
-BLK_DEV_SIZE=`blockdev --getsz $SCRATCH_DEV`
+BLK_DEV_SIZE=`blockdev --getsz $BLK_DEV`
 FILE_SIZE=$((BLK_DEV_SIZE * 512))
-
-cat >$fio_config <<EOF
-###########
-# $seq test's fio activity
-# Filenames derived from jobsname and jobid like follows:
-# ${JOB_NAME}.${JOB_ID}.${ITERATION_ID}
-[global]
-ioengine=libaio
-bs=4k
-directory=${SCRATCH_MNT}
-filesize=${FILE_SIZE}
-size=9999T
-continue_on_error=write
-ignore_error=EIO,ENOSPC:EIO
-error_dump=0
-
-[stress_dio_aio_activity]
-create_on_open=1
-fallocate=none
-iodepth=128*${LOAD_FACTOR}
-direct=1
-buffered=0
-numjobs=${NUM_JOBS}
-rw=randwrite
-runtime=40+${RUN_TIME}
-time_based
-
-[stress_mmap_activity]
-ioengine=mmap
-create_on_open=0
-fallocate=1
-fdatasync=40960
-filesize=8M
-size=9999T
-numjobs=${NUM_JOBS}
-rw=randwrite
-runtime=40+${RUN_TIME}
-time_based
-
-EOF
-
-_require_fio $fio_config
-
-# Disable all sync operations to get higher load
-FSSTRESS_AVOID="$FSSTRESS_AVOID -ffsync=0 -fsync=0 -ffdatasync=0 -f setattr=1"
 
 _workout()
 {
-	out=$SCRATCH_MNT/fsstress.$$
-	args=`_scale_fsstress_args -p 1 -n999999999 -f setattr=0 $FSSTRESS_AVOID -d $out`
-	echo ""
-	echo "Start fsstress.."
-	echo ""
-	echo "fsstress $args" >> $seqres.full
-	$FSSTRESS_PROG $args > /dev/null 2>&1 &
-	fs_pid=$!
-	echo "Start fio.."
-	cat $fio_config >>  $seqres.full
-	$FIO_PROG $fio_config >> $seqres.full 2>&1 &
-	fio_pid=$!
-
-	# Let's it work for awhile, and force device failure
-	sleep $RUN_TIME
+	dd if=/dev/zero of=$SCRATCH_MNT/touch_failed_filesystem count=1 bs=4k >> $seqres.full 2>&1
 	start_fail_scratch_dev
 	# After device turns in to failed state filesystem may yet not know about
 	# that so buffered write(2) may succeed, but any integrity operations
 	# such as (sync, fsync, fdatasync, direct-io) should fail.
-	dd if=/dev/zero of=$SCRATCH_MNT/touch_failed_filesystem count=1 bs=4k conv=fsync \
-	    >> $seqres.full 2>&1 && \
+	sync $SCRATCH_MNT/touch_failed_filesystem >> $seqres.full 2>&1 && \
 	    _fail "failed: still able to perform integrity fsync on $SCRATCH_MNT"
-
-	kill $fs_pid &> /dev/null
-	wait $fs_pid
-	wait $fio_pid
 
 	# We expect that broken FS still can be umounted
 	run_check _scratch_unmount
@@ -150,17 +87,16 @@ _workout()
 
 	# In order to check that filesystem is able to recover journal on mount(2)
 	# perform mount/umount, after that all errors should be fixed
-	_scratch_mount
-	run_check _scratch_unmount
+	#_scratch_mount
+	#run_check _scratch_unmount
 }
 
 # real QA test starts here
 
 rm -f $seqres.full
 _scratch_mkfs >> $seqres.full 2>&1 || _fail "mkfs failed"
-_scratch_mount
+_scratch_mount # -o "volatile"
 allow_fail_make_request
 _workout
 status=$?
-disallow_fail_make_request
 exit

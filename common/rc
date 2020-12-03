@@ -420,6 +420,22 @@ _scratch_shutdown_handle()
 	fi
 }
 
+# Return the scratch device or base scratch device in case of overlay fs
+_scratch_base_device()
+{
+	if [ $FSTYP = "overlay" ]; then
+		if [ -z $OVL_BASE_SCRATCH_DEV ]; then
+			# In lagacy overlay usage, it may specify directory as SCRATCH_DEV
+			# in this case OVL_BASE_SCRATCH_DEV will be unset
+			_notrun "This test requires a valid $OVL_BASE_SCRATCH_DEV as ovl base fs"
+		else
+			echo $OVL_BASE_SCRATCH_DEV
+		fi
+	else
+		echo $SCRATCH_DEV
+	fi
+}
+
 _test_mount()
 {
     if [ "$FSTYP" == "overlay" ]; then
@@ -4014,6 +4030,7 @@ _get_block_size()
 	fi
 	stat -f -c %S $1
 }
+
 
 get_page_size()
 {
