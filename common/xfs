@@ -233,6 +233,10 @@ _xfs_get_fsxattr()
 # maintain the current verification levels.
 _xfs_check()
 {
+	# Darrick J. Wong: "FWIW I patched xfs_check out of fstests years ago."
+	# https://lore.kernel.org/linux-xfs/20201109182231.GB9699@magnolia/
+	return 0
+
 	OPTS=" "
 	DBOPTS=" "
 	USAGE="Usage: xfs_check [-fsvV] [-l logdev] [-i ino]... [-b bno]... special"
