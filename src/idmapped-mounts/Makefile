@@ -25,11 +25,11 @@ depend: .dep
 
 include $(BUILDRULES)
 
-idmapped-mounts:
+idmapped-mounts: $(CFILES_IDMAPPED_MOUNTS)
 	@echo "    [CC]    $@"
 	$(Q)$(LTLINK) $(CFILES_IDMAPPED_MOUNTS) -o $@ $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 
-mount-idmapped:
+mount-idmapped: $(CFILES_MOUNT_IDMAPPED)
 	@echo "    [CC]    $@"
 	$(Q)$(LTLINK) $(CFILES_MOUNT_IDMAPPED) -o $@ $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 

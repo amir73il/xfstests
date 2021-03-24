@@ -175,7 +175,7 @@ static int write_id_mapping(idmap_type_t map_type, pid_t pid, const char *buf, s
 	int fd = -EBADF, setgroups_fd = -EBADF;
 	int fret = -1;
 	int ret;
-	char path[STRLITERALLEN("/proc") + INTTYPE_TO_STRLEN(pid_t) +
+	char path[STRLITERALLEN("/proc/") + INTTYPE_TO_STRLEN(pid_t) +
 		  STRLITERALLEN("/setgroups") + 1];
 
 	if (geteuid() != 0 && map_type == ID_TYPE_GID) {
@@ -273,7 +273,7 @@ static int get_userns_fd_from_idmap(struct list *idmap)
 {
 	int ret;
 	pid_t pid;
-	char path_ns[STRLITERALLEN("/proc") + INTTYPE_TO_STRLEN(pid_t) +
+	char path_ns[STRLITERALLEN("/proc/") + INTTYPE_TO_STRLEN(pid_t) +
 		  STRLITERALLEN("/ns/user") + 1];
 
 	pid = do_clone(get_userns_fd_cb, NULL, CLONE_NEWUSER | CLONE_NEWNS);
@@ -364,7 +364,7 @@ int main(int argc, char *argv[])
 	while ((ret = getopt_long_only(argc, argv, "", longopts, &index)) != -1) {
 		switch (ret) {
 		case 'a':
-			if (strnequal(optarg, "/proc", STRLITERALLEN("/proc/"))) {
+			if (strnequal(optarg, "/proc/", STRLITERALLEN("/proc/"))) {
 				fd_userns = open(optarg, O_RDONLY | O_CLOEXEC);
 				if (fd_userns < 0)
 					exit_log("%m - Failed top open user namespace path %s\n", optarg);
@@ -373,7 +373,7 @@ int main(int argc, char *argv[])
 
 			ret = parse_map(optarg);
 			if (ret < 0)
-				exit_log("Failed to parse idmaps for mount\n");
+				exit_log("Failed to parse idmaps for mount '%s' (%d)\n", optarg, STRLITERALLEN("/proc/"));
 			break;
 		case 'd':
 			recursive = true;
@@ -402,12 +402,15 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	if (!list_empty(&active_map)) {
+	if (!list_empty(&active_map) || fd_userns > 0) {
 		struct mount_attr attr = {
 			.attr_set = MOUNT_ATTR_IDMAP,
 		};
 
-		attr.userns_fd = get_userns_fd_from_idmap(&active_map);
+		if (fd_userns > 0)
+			attr.userns_fd = fd_userns;
+		else
+			attr.userns_fd = get_userns_fd_from_idmap(&active_map);
 		if (attr.userns_fd < 0)
 			exit_log("%m - Failed to create user namespace\n");
 
