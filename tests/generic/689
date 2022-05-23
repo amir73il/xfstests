@@ -19,6 +19,8 @@ _begin_fstest auto quick perms idmapped
 # real QA test starts here
 
 _supported_fs generic
+_fixed_by_kernel_commit 705191b03d50 "fs: fix acl translation"
+
 _require_test
 _require_idmapped_mounts
 _require_user fsgqa

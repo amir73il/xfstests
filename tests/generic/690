@@ -30,6 +30,8 @@ _cleanup()
 # real QA test starts here
 
 _supported_fs generic
+_fixed_by_kernel_commit d0e64a981fd841 "btrfs: always log symlinks in full mode"
+
 _require_scratch
 _require_symlinks
 _require_dm_target flakey
