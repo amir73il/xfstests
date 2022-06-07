@@ -122,7 +122,8 @@ fi
 _dump_status "broken fs config" >> $seqres.full
 
 echo "Look for leftover warning in xfs_check"
-_scratch_xfs_check | _filter_leftover
+#_scratch_xfs_check | _filter_leftover
+_scratch_xfs_repair -n 2>&1 | _filter_leftover
 
 echo "Look for leftover warning in xfs_repair"
 _scratch_xfs_repair -n 2>&1 | _filter_leftover
