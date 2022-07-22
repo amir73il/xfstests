@@ -24,6 +24,9 @@ _cleanup()
 
 # Modify as appropriate.
 _supported_fs generic
+_fixed_by_kernel_commit fbe7e5200365 \
+	"xfs: fallocate() should call file_modified()"
+
 _require_user
 _require_test
 verb=finsert

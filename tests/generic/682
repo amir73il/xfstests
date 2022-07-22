@@ -22,6 +22,9 @@ _begin_fstest auto quick quota
 
 # Modify as appropriate.
 _supported_fs generic
+_fixed_by_kernel_commit 41667260bc84 \
+	"xfs: reserve quota for target dir expansion when renaming files"
+
 _require_quota
 _require_user
 _require_scratch

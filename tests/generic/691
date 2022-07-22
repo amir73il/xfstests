@@ -29,6 +29,9 @@ _cleanup()
 
 # real QA test starts here
 _supported_fs generic
+_fixed_by_kernel_commit bc37e4fb5cac \
+	'xfs: revert "xfs: actually bump warning counts when we send warnings"'
+
 _require_scratch
 _require_quota
 _require_user

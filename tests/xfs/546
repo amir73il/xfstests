@@ -29,6 +29,11 @@ _begin_fstest auto quick shutdown
 
 # Modify as appropriate.
 _supported_fs xfs
+_fixed_by_kernel_commit 5679897eb104 \
+	"vfs: make sync_filesystem return errors from ->sync_fs"
+_fixed_by_kernel_commit 2d86293c7075 \
+	"xfs: return errors in xfs_fs_sync_fs"
+
 _require_xfs_io_command syncfs
 _require_scratch_nocheck
 _require_scratch_shutdown

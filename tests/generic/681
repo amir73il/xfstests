@@ -22,6 +22,9 @@ _begin_fstest auto quick quota
 
 # Modify as appropriate.
 _supported_fs generic
+_fixed_by_kernel_commit 871b9316e7a7 \
+	"xfs: reserve quota for dir expansion when linking/unlinking files"
+
 _require_quota
 _require_user
 _require_scratch
