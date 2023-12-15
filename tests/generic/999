@@ -1,0 +1,64 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2023 CTERA Networks. All Rights Reserved.
+#
+# FS QA Test No. 999
+#
+# Test to excersize file_write_not_started() assert in fsnotify_file_perm()
+# that was added by kernel commit cb383f066867 ("fsnotify: assert that
+# file_start_write() is not held in permission hooks").
+#
+# Test that when calling sendfile(2) from a file in overlayfs into a file
+# in the lower filesystem, kernel does not hold freeze protection on the lower
+# filesystem while reading from the overlayfs file, which actually reads and
+# calls the fsnotify_file_perm() permission hook on the lower file.
+#
+
+. ./common/preamble
+_begin_fstest auto quick rw
+
+# Override the default cleanup function.
+_cleanup()
+{
+	cd /
+	$UMOUNT_PROG ${ovlmnt} &> /dev/null
+	rm -f $tmp.*
+}
+
+# real QA test starts here
+_require_scratch
+_supported_fs ^overlay
+_require_extra_fs overlay
+
+_scratch_mkfs >> $seqres.full
+_scratch_mount
+_supports_filetype $SCRATCH_MNT || _notrun "overlayfs test requires d_type"
+
+# Create overlayfs with a lower file
+lower="$SCRATCH_MNT/lower"
+upper="$SCRATCH_MNT/upper"
+work="$SCRATCH_MNT/work"
+ovlmnt="$SCRATCH_MNT/ovlmnt"
+mkdir -p $lower $upper $work $ovlmnt
+lowersrc="$lower/foo"
+echo 1234 > "$lowersrc"
+
+# Mount overlayfs "manually" because common/overlay is not included
+$MOUNT_PROG -t overlay overlay -o "lowerdir=$lower,upperdir=$upper,workdir=$work" $ovlmnt
+
+# Source file is on overlayfs, but actually read from lower (scratch) filesystem
+ovlsrc="$ovlmnt/foo"
+# Destination file is on the same (scratch) filesystem as the lower file
+lowerdst="$SCRATCH_MNT/bar"
+
+$XFS_IO_PROG -f -c "sendfile -i $ovlsrc" $lowerdst >> $seqres.full 2>&1
+[ $? -ne 0 ] && _fail "xfs_io sendfile failed"
+
+diff -q $lowersrc $lowerdst
+status=$?
+[ $status -ne 0 ] && _fail "$lowersrc and $lowerdst differ"
+
+echo Silence is golden.
+# success, all done
+status=0
+exit
