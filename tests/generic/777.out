@@ -1,0 +1,15 @@
+QA output created by 777
+test_file_handles after cycle mount
+test_file_handles after rename parent
+test_file_handles after rename grandparent
+test_file_handles after move to new parent
+open_by_handle(TEST_DIR/file000000) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000001) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000002) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000003) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000004) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000005) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000006) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000007) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000008) returned 116 incorrectly on a linked file!
+open_by_handle(TEST_DIR/file000009) returned 116 incorrectly on a linked file!
