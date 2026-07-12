@@ -1,0 +1,61 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2018 Red Hat, Inc.  All Rights Reserved.
+# Copyright (c) 2026 CTERA Networks.  All Rights Reserved.
+#
+# FS QA Test No. overlay/090
+#
+# Variant of generic/565: exercise copy_file_range() between two overlayfs
+# mounts that share the same base filesystem.  overlayfs unwraps both fds to
+# their underlying real files and delegates to vfs_copy_file_range(), so the
+# base fs can perform an efficient copy when both real files are on the same sb.
+#
+. ./common/preamble
+_begin_fstest auto quick copy_range
+
+_cleanup()
+{
+	cd /
+	$UMOUNT_PROG $mnt2 2>/dev/null
+	rm -f $tmp.*
+}
+
+_register_cleanup "_cleanup" BUS
+
+# Import common functions.
+. ./common/filter
+
+_require_scratch
+_require_xfs_io_command "copy_range"
+
+_scratch_mkfs >>$seqres.full 2>&1
+_scratch_mount
+
+# Set up a second overlayfs mount on the same base fs as SCRATCH_MNT
+lower2=$OVL_BASE_SCRATCH_MNT/$OVL_LOWER.2
+upper2=$OVL_BASE_SCRATCH_MNT/$OVL_UPPER.2
+work2=$OVL_BASE_SCRATCH_MNT/$OVL_WORK.2
+mnt2=$(mktemp -d)
+mkdir -p $lower2 $upper2 $work2
+
+# Create the source file directly in lower2 so it is a pre-existing lower
+# layer file when accessed via mnt2 (no copy-up on the source side)
+$XFS_IO_PROG -f -c "pwrite -S 0x61 0 128k" $lower2/file >> $seqres.full 2>&1
+
+# Check that the base fs supports copy_file_range before testing overlayfs behaviour
+testio=$($XFS_IO_PROG -f -c "copy_range -l 128k $lower2/file" ${lower2}/file.copy 2>&1)
+rm -f ${lower2}/file.copy
+echo "$testio" | grep -q "Operation not supported" && \
+	_notrun "$OVL_BASE_FSTYP does not support copy_file_range"
+
+_overlay_mount_dirs $lower2 $upper2 $work2 overlay2 $mnt2 || \
+	_notrun "cannot mount second overlay"
+
+$XFS_IO_PROG -f -c "copy_range -l 128k $mnt2/file" $SCRATCH_MNT/copy
+cmp $mnt2/file $SCRATCH_MNT/copy
+echo "md5sums after cross-mount copy:"
+md5sum $mnt2/file $SCRATCH_MNT/copy | sed -e "s,$mnt2,OVL_MNT2,g" | _filter_scratch
+
+# success, all done
+status=0
+exit
