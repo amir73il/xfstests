@@ -1,0 +1,5 @@
+QA output created by 091
+md5sums after base<->overlay copy_file_range:
+81615449a98aaaad8dc179b3bec87f38  SCRATCH_DEV/basesrc
+81615449a98aaaad8dc179b3bec87f38  SCRATCH_MNT/copy1
+81615449a98aaaad8dc179b3bec87f38  SCRATCH_DEV/basesrc.copy2

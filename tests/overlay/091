@@ -1,0 +1,53 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2018 Red Hat, Inc.  All Rights Reserved.
+# Copyright (c) 2026 CTERA Networks.  All Rights Reserved.
+#
+# FS QA Test No. overlay/091
+#
+# Test copy_file_range() between an overlayfs file and a base fs file directly.
+# Exercise both directions:
+#   base fs -> overlayfs
+#   overlayfs -> base fs
+#
+# This requires the kernel to allow copy_file_range() across filesystem types
+# when the overlayfs source/destination unwraps to the same underlying fs as
+# the other file.  The test currently fails with -EXDEV until that support is
+# added.
+#
+. ./common/preamble
+_begin_fstest auto quick copy_range
+
+# Import common functions.
+. ./common/filter
+
+_require_scratch
+_require_xfs_io_command "copy_range"
+
+_scratch_mkfs >>$seqres.full 2>&1
+_scratch_mount
+
+# Create the source file directly on the base fs (not through overlayfs)
+basesrc=$OVL_BASE_SCRATCH_MNT/basesrc
+$XFS_IO_PROG -f -c "pwrite -S 0x61 0 128k" $basesrc >> $seqres.full 2>&1
+
+# Check that the base fs supports copy_file_range before testing overlayfs behaviour
+testio=$($XFS_IO_PROG -f -c "copy_range -l 128k $basesrc" ${basesrc}.copy 2>&1)
+rm -f ${basesrc}.copy
+echo "$testio" | grep -q "Operation not supported" && \
+	_notrun "$OVL_BASE_FSTYP does not support copy_file_range"
+
+# base fs -> overlayfs
+$XFS_IO_PROG -f -c "copy_range -l 128k $basesrc" $SCRATCH_MNT/copy1
+cmp $basesrc $SCRATCH_MNT/copy1
+
+# overlayfs -> base fs
+$XFS_IO_PROG -f -c "copy_range -l 128k $SCRATCH_MNT/copy1" ${basesrc}.copy2
+cmp $basesrc ${basesrc}.copy2
+
+echo "md5sums after base<->overlay copy_file_range:"
+md5sum $basesrc $SCRATCH_MNT/copy1 ${basesrc}.copy2 | _filter_scratch
+
+# success, all done
+status=0
+exit
