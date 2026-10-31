@@ -1,0 +1,147 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Hungyu Lin.  All Rights Reserved.
+#
+# FS QA Test 998
+#
+# Check that rejected casefold changes leave overlay directory casefold
+# flags unchanged and existing files accessible.
+#
+. ./common/preamble
+_begin_fstest auto quick ioctl casefold
+
+_cleanup()
+{
+	cd /
+	[ -n "$merge" ] && _unmount "$merge" 2>/dev/null
+	rm -f $tmp.*
+}
+
+. ./common/filter
+. ./common/casefold
+
+_exclude_fs overlay
+_require_extra_fs overlay
+_require_scratch
+_require_scratch_casefold
+_fixed_by_kernel_commit xxxxxxxxxxxx "ovl: do not let chattr change the casefold flag"
+_fixed_by_kernel_commit xxxxxxxxxxxx \
+	"ovl: check the casefold flag of directories only"
+
+check_casefold()
+{
+	local path=$1
+	local expected=$2
+	local expected_state=disabled
+	local flags
+	local actual=0
+
+	[ "$expected" -eq 1 ] && expected_state=enabled
+	flags=$($LSATTR_PROG -d "$path" 2> $tmp.err) || {
+		cat $tmp.err >> $seqres.full
+		_fail "cannot read flags on $path"
+	}
+	flags=${flags%% *}
+	echo "lsattr $path: $flags" >> $seqres.full
+	[[ "$flags" == *F* ]] && actual=1
+	[ "$actual" -eq "$expected" ] || \
+		_fail "$path: expected casefold $expected_state, got flags $flags"
+}
+
+reject_casefold_change()
+{
+	local change=$1
+	local path=$2
+	local ret
+
+	$CHATTR_PROG "$change" "$path" > $tmp.err 2>&1
+	ret=$?
+	echo "chattr $change $path: exit $ret" >> $seqres.full
+	cat $tmp.err >> $seqres.full
+	[ "$ret" -ne 0 ] || \
+		_fail "chattr $change $path succeeded, expected EOPNOTSUPP"
+	# Check the SETFLAGS error, rather than accepting any chattr failure.
+	grep -Fq \
+		-e "Operation not supported while setting flags on $path" \
+		-e "Not supported while setting flags on $path" \
+		$tmp.err || \
+		_fail "chattr $change $path: expected EOPNOTSUPP, got exit $ret: $(cat $tmp.err)"
+}
+
+test_casefold()
+{
+	local folded=$1
+
+	root=$SCRATCH_MNT/ovl-$folded
+	lower=$root/lower
+	upper=$root/upper
+	work=$root/work
+	merge=$root/merge
+	mkdir "$root" || _fail "cannot create $root"
+	if [ "$folded" -eq 1 ]; then
+		_casefold_set_attr "$root" >> $seqres.full 2>&1 || \
+			_notrun "cannot enable casefold on the scratch filesystem"
+		change=-F
+		same=+F
+	else
+		change=+F
+		same=-F
+	fi
+	mkdir "$lower" "$upper" "$work" "$merge" || \
+		_fail "cannot create overlay directories"
+	mkdir "$lower/empty" "$lower/dir" || \
+		_fail "cannot create lower directories"
+	cp $tmp.data "$lower/dir/file" || _fail "cannot create lower file"
+	cp $tmp.data "$lower/file" || _fail "cannot create lower file"
+
+	if [ "$folded" -eq 1 ]; then
+		_mount -t overlay overlay "$merge" \
+			-o lowerdir="$lower",upperdir="$upper",workdir="$work" \
+			>> $seqres.full 2>&1 || \
+			_notrun "overlayfs does not support casefold enabled layers"
+	else
+		_mount -t overlay overlay "$merge" \
+			-o lowerdir="$lower",upperdir="$upper",workdir="$work" \
+			>> $seqres.full 2>&1 || _fail "cannot mount overlay"
+	fi
+
+	# A lower-only directory would be copied up as an empty upper directory,
+	# even when its merged view contains files. The upper root is also empty.
+	for path in "$merge/empty" "$merge/dir" "$merge"; do
+		check_casefold "$path" "$folded"
+		reject_casefold_change "$change" "$path"
+		check_casefold "$path" "$folded"
+		cmp $tmp.data "$merge/file" >> $seqres.full 2>&1 || \
+			_fail "$merge/file: not readable with expected contents after chattr $change $path"
+		cmp $tmp.data "$merge/dir/file" >> $seqres.full 2>&1 || \
+			_fail "$merge/dir/file: not readable with expected contents after chattr $change $path"
+	done
+
+	# chattr still issues SETFLAGS for a no-change request.
+	for path in "$merge/empty" "$merge/dir" "$merge"; do
+		echo "chattr $same $path" >> $seqres.full
+		$CHATTR_PROG "$same" "$path" >> $seqres.full 2>&1 || \
+			_fail "chattr $same $path: expected success for unchanged casefold state, got exit $?"
+		check_casefold "$path" "$folded"
+	done
+	_unmount "$merge" || _fail "cannot unmount overlay"
+	merge=
+	cmp $tmp.data "$lower/file" >> $seqres.full 2>&1 || \
+		_fail "$lower/file: not readable with expected contents"
+	cmp $tmp.data "$lower/dir/file" >> $seqres.full 2>&1 || \
+		_fail "$lower/dir/file: not readable with expected contents"
+}
+
+_scratch_mkfs_casefold >> $seqres.full 2>&1 || \
+	_fail "cannot format the casefold scratch filesystem"
+_scratch_mount_casefold || _fail "cannot mount the casefold scratch filesystem"
+printf 'sentinel\n' > $tmp.data
+
+# Try the enabled mount first so kernels without overlay casefold support
+# skip before reaching the actual attribute-change checks.
+echo "Casefold enabled" | tee -a $seqres.full
+test_casefold 1
+echo "Casefold disabled" | tee -a $seqres.full
+test_casefold 0
+
+_exit 0
