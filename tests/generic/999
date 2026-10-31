@@ -1,0 +1,148 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Hungyu Lin.  All Rights Reserved.
+#
+# FS QA Test 999
+#
+# Check removal of files and directories from casefolded overlay layers,
+# including copied-up files, merged directories and recursive removal.
+#
+. ./common/preamble
+_begin_fstest auto quick dir casefold
+
+_cleanup()
+{
+	cd /
+	[ -n "$merge" ] && _unmount "$merge" 2>/dev/null
+	rm -f $tmp.*
+}
+
+. ./common/filter
+. ./common/casefold
+
+_exclude_fs overlay
+_require_extra_fs overlay
+_require_scratch
+_require_scratch_casefold
+_fixed_by_kernel_commit xxxxxxxxxxxx "ovl: fix whiteout creation in casefolded directories"
+_fixed_by_kernel_commit xxxxxxxxxxxx \
+	"ovl: check the casefold flag of directories only"
+
+mount_overlay()
+{
+	_mount -t overlay overlay "$merge" \
+		-o lowerdir="$lower",upperdir="$upper",workdir="$work"
+}
+
+check_absent()
+{
+	local name=$1
+	local ret
+
+	stat "$merge/$name" > $tmp.stat 2>&1
+	ret=$?
+	echo "stat $merge/$name: exit $ret" >> $seqres.full
+	cat $tmp.stat >> $seqres.full
+	[ "$ret" -ne 0 ] || _fail "$name: expected ENOENT, stat succeeded"
+	grep -q ': No such file or directory$' $tmp.stat || \
+		_fail "$name: expected ENOENT, got $(cat $tmp.stat)"
+}
+
+check_view()
+{
+	local phase=$1
+	local name
+
+	echo "Checking merged view $phase" >> $seqres.full
+	for name in lowerfile anotherfile copyfile lowerdir mergeddir tree upperonly; do
+		check_absent "$name"
+		check_absent "$(printf '%s' "$name" | tr a-z A-Z)"
+	done
+	cmp $tmp.data "$merge/keep" >> $seqres.full 2>&1 || \
+		_fail "$merge/keep: not readable with expected contents $phase"
+	ls -1 "$merge" > $tmp.names || _fail "cannot list $merge $phase"
+	printf 'keep\n' > $tmp.expected
+	diff -u $tmp.expected $tmp.names >> $seqres.full 2>&1 || \
+		_fail "$merge: expected only keep $phase (directory listing in $seqres.full)"
+}
+
+_scratch_mkfs_casefold >> $seqres.full 2>&1 || \
+	_fail "cannot format the casefold scratch filesystem"
+_scratch_mount_casefold || _fail "cannot mount the casefold scratch filesystem"
+root=$SCRATCH_MNT/ovl
+lower=$root/lower
+upper=$root/upper
+work=$root/work
+merge=$root/merge
+mkdir "$root" || _fail "cannot create $root"
+_casefold_set_attr "$root" >> $seqres.full 2>&1 || \
+	_notrun "cannot enable casefold on the scratch filesystem"
+mkdir "$lower" "$upper" "$work" "$merge" || \
+	_fail "cannot create overlay directories"
+
+printf 'lower data\n' > $tmp.data
+printf 'upper data\n' > $tmp.upper
+for name in lowerfile anotherfile copyfile keep; do
+	cp $tmp.data "$lower/$name" || _fail "cannot create lower $name"
+done
+mkdir "$lower/lowerdir" "$lower/mergeddir" "$lower/tree" "$upper/mergeddir" || \
+	_fail "cannot prepare lower and merged directories"
+for name in one two; do
+	cp $tmp.data "$lower/tree/$name" || _fail "cannot create lower tree/$name"
+done
+cp $tmp.upper "$upper/upperonly" || _fail "cannot create upper-only file"
+mount_overlay >> $seqres.full 2>&1 || \
+	_notrun "overlayfs does not support casefold enabled layers"
+
+# Copy up through the overlay, without changing the backing layers directly.
+cat $tmp.upper > "$merge/copyfile" || _fail "copy-up write failed"
+cmp $tmp.upper "$upper/copyfile" >> $seqres.full 2>&1 || \
+	_fail "copyfile was not copied up with the expected data"
+
+# The first removal is a control that does not need a lower whiteout.
+rm "$merge/upperonly" || \
+	_fail "cannot remove upper-only file"
+rm "$merge/lowerfile" || \
+	_fail "cannot remove lower-only file"
+rm "$merge/ANOTHERFILE" || \
+	_fail "cannot remove another lower-only file using different case"
+rm "$merge/COPYFILE" || \
+	_fail "cannot remove copied-up file using different case"
+rmdir "$merge/LOWERDIR" || \
+	_fail "cannot remove lower-only directory using different case"
+rmdir "$merge/mergeddir" || \
+	_fail "cannot remove merged directory"
+# Removing the children leaves whiteouts in the copied-up directory.
+rm -r "$merge/TREE" || _fail "cannot recursively remove lower directory"
+check_view "after removal"
+
+cat $tmp.upper > "$merge/LOWERFILE" || _fail "cannot recreate removed name"
+cmp $tmp.upper "$merge/lowerfile" >> $seqres.full 2>&1 || \
+	_fail "recreated name is not accessible with different case"
+rm "$merge/lowerfile" || \
+	_fail "cannot remove recreated name"
+check_view "after recreating and removing a name"
+
+_unmount "$merge" || _fail "cannot unmount overlay"
+mount_overlay >> $seqres.full 2>&1 || _fail "cannot remount overlay"
+check_view "after remount"
+_unmount "$merge" || _fail "cannot unmount overlay"
+merge=
+
+for name in lowerfile anotherfile copyfile keep; do
+	cmp $tmp.data "$lower/$name" >> $seqres.full 2>&1 || \
+		_fail "$lower/$name: not readable with expected contents"
+done
+for name in lowerdir mergeddir tree; do
+	[ -d "$lower/$name" ] || {
+		stat "$lower/$name" >> $seqres.full 2>&1
+		_fail "$lower/$name: expected the lower directory to remain"
+	}
+done
+for name in one two; do
+	cmp $tmp.data "$lower/tree/$name" >> $seqres.full 2>&1 || \
+		_fail "$lower/tree/$name: not readable with expected contents"
+done
+
+echo "Silence is golden"
+_exit 0
