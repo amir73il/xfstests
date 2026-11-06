@@ -172,24 +172,20 @@ _check_overlay_feature()
 	# parameter (the system default) and per mount by mount
 	# option ${feature}=[on|off].
 	local default=`_get_fs_module_param ${feature}`
-	if [ "$default" != Y ] && [ "$default" != N ]; then
-		# Some mount options (e.g. uuid, xino, verity) have no
-		# on/off module parameter of the same name.  For those,
-		# a missing (or non-boolean) parameter means that the
-		# feature defaults to off rather than that it is
-		# unsupported.  Unsupported options are rejected by the
-		# probe mount in _require_scratch_overlay_features.
-		default=N
-	fi
+	local value=`_fs_options $dev | tr ',' '\n' | grep "^${feature}=" | cut -d= -f2`
 
 	# Check options to be sure. For example, Overlayfs will fallback to
 	# index=off if underlying fs does not support file handles.
 	# Overlayfs only displays mount option if it differs from the default.
+	# Without a module param of the same name (e.g. xino), the feature
+	# may be on by default, so only require it is not shown as non-on.
 	# Overlayfs may enable the feature, but fallback to read-only mount.
-	((( [ "$default" = N ] && _fs_options $dev | grep -q "${feature}=on" ) || \
-	  ( [ "$default" = Y ] && ! _fs_options $dev | grep -q "${feature}=off" )) && \
-	    touch $mnt/foo 2>/dev/null ) || \
-	        _notrun "${FSTYP} feature '${feature}' cannot be enabled on ${dev}"
+	if [ "$default" = N ]; then
+		[ "$value" = on ]
+	else
+		[ -z "$value" -o "$value" = on ]
+	fi && touch $mnt/foo 2>/dev/null || \
+		_notrun "${FSTYP} feature '${feature}' cannot be enabled on ${dev}"
 }
 
 # Require a set of overlayfs features
