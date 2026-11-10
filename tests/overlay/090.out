@@ -1,0 +1,50 @@
+QA output created by 090
+== userxattr
+redirect_dir=followdata
+s1: data
+s2: data
+s3: data
+== userxattr,redirect_dir=followdata
+redirect_dir=followdata
+s1: data
+s2: data
+s3: data
+rel: Operation not permitted
+dir: Operation not permitted
+up: Operation not permitted
+== userxattr,redirect_dir=off
+redirect_dir=followdata
+s1: data
+s2: data
+s3: data
+rel: Operation not permitted
+dir: Operation not permitted
+up: Operation not permitted
+== userxattr,redirect_dir=nofollow
+no data-only layer == userxattr
+== metacopy=off
+s1: data
+s2: data
+s3: data
+== redirect_dir=followdata
+redirect_dir=followdata
+s1: data
+s2: data
+s3: data
+rel: Operation not permitted
+dir: Operation not permitted
+up: Operation not permitted
+== redirect_dir=follow,metacopy=off
+s1: data
+s2: data
+s3: data
+== redirect_dir=on,metacopy=off
+s1: data
+s2: data
+s3: data
+== redirect_dir=nofollow
+no data-only layer == redirect_dir=nofollow
+== metacopy=on,redirect_dir=follow
+lower2 /: data
+lower2 /base: data
+lower2 /base/file: lowr

@@ -1,0 +1,151 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Giuseppe Scrivano.  All Rights Reserved.
+#
+# FS QA Test 090
+#
+# Test the redirect_dir=followdata mount option.
+#
+# Data-only layers select redirect_dir=followdata, which follows redirects
+# from any lower layer to a data-only layer, and cannot be used with
+# redirect_dir=nofollow.
+#
+# Also test following an absolute redirect past a lower layer that has the
+# parent directory of the redirect target, with metacopy=on.
+#
+. ./common/preamble
+_begin_fstest auto quick metacopy redirect attr
+
+# Import common functions.
+. ./common/filter
+. ./common/attr
+
+# We use non-default scratch underlying overlay dirs, we need to check
+# them explicitly after test.
+_require_scratch_nocheck
+_require_attrs user
+_require_attrs trusted
+_require_scratch_overlay_redirect_followdata
+_require_scratch_overlay_features redirect_dir metacopy
+_require_scratch_overlay_lowerdata_layers
+
+data=$OVL_BASE_SCRATCH_MNT/data
+l1=$OVL_BASE_SCRATCH_MNT/lower1
+l2=$OVL_BASE_SCRATCH_MNT/lower2
+l3=$OVL_BASE_SCRATCH_MNT/lower3
+upper=$OVL_BASE_SCRATCH_MNT/upper
+work=$OVL_BASE_SCRATCH_MNT/work
+layers="$l3:$l2:$l1::$data"
+
+# Make a metacopy file <file> with the redirect <redirect>, for both
+# userxattr and trusted xattr mounts
+make_stub()
+{
+	local file=$1 redirect=$2 x
+
+	touch $file
+	for x in user.overlay. ${OVL_XATTR_METACOPY%metacopy}; do
+		$SETFATTR_PROG -n ${x}metacopy $file
+		$SETFATTR_PROG -n ${x}redirect -v $redirect $file
+	done
+	truncate -s 4 $file
+}
+
+# Mount the layers $layers with the options <opts>, print redirect_dir=followdata
+# if the mount shows it and <opts> has userxattr or redirect_dir (otherwise it
+# depends on the kernel config), and the content of each of the following files,
+# or the error reading it
+check()
+{
+	local opts=$1 f
+
+	shift
+	echo "== $opts"
+	_overlay_scratch_mount_dirs "$layers" $upper $work -o $opts
+	case $opts in
+	*userxattr*|*redirect_dir=*)
+		_fs_options $OVL_BASE_SCRATCH_MNT | grep -o redirect_dir=followdata
+		;;
+	esac
+	for f; do
+		echo "$f: $(cat $SCRATCH_MNT/$f 2>&1 | sed 's/^cat: .*: //')"
+	done
+	_unmount $SCRATCH_MNT
+}
+
+# Mounting the layers $layers with the options <opts> must fail
+check_fail()
+{
+	local opts=$1
+
+	echo "== $opts"
+	_overlay_scratch_mount_dirs "$layers" $upper $work -o $opts \
+		>> $seqres.full 2>&1 && echo "mount succeeded" && \
+		_unmount $SCRATCH_MNT
+}
+
+_scratch_mkfs
+mkdir -p $data/base $l1/base $l2/base $l3 $upper $work
+echo -n "data" > $data/base/file
+
+make_stub $l1/s1 /base/file
+make_stub $l2/s2 /base/file
+make_stub $l3/s3 /base/file
+# The redirect target in a lower layer below s3, which is not looked up
+echo -n "lowr" > $l2/base/file
+# Redirects that are not followed: relative, directory, upper
+echo -n "lowr" > $l2/reltarget
+make_stub $l3/rel reltarget
+mkdir $l3/dir
+$SETFATTR_PROG -n user.overlay.redirect -v /base $l3/dir
+$SETFATTR_PROG -n $OVL_XATTR_REDIRECT -v /base $l3/dir
+make_stub $upper/up /base/file
+
+# followdata is selected by default with userxattr and a data-only layer
+check userxattr s1 s2 s3
+check userxattr,redirect_dir=followdata s1 s2 s3 rel dir up
+# redirect_dir=off does not follow redirects to lower with userxattr, also
+# with redirect_always_follow=Y, so a data-only layer selects followdata
+check userxattr,redirect_dir=off s1 s2 s3 rel dir up
+# a data-only layer cannot be used without following redirects
+check_fail userxattr,redirect_dir=nofollow
+echo -n "no data-only layer "
+layers="$l3:$l2:$l1" check userxattr
+
+check metacopy=off s1 s2 s3
+check redirect_dir=followdata s1 s2 s3 rel dir up
+check redirect_dir=follow,metacopy=off s1 s2 s3
+check redirect_dir=on,metacopy=off s1 s2 s3
+check_fail redirect_dir=nofollow
+echo -n "no data-only layer "
+layers="$l3:$l2:$l1" check redirect_dir=nofollow
+
+# An explicit option requires a data-only layer and conflicts with metacopy=on
+_overlay_scratch_mount_dirs "$l3:$l2:$l1" $upper $work \
+	-o userxattr,redirect_dir=followdata >> $seqres.full 2>&1 && \
+	echo "mount redirect_dir=followdata without a data-only layer succeeded"
+_overlay_scratch_mount_dirs "$layers" $upper $work \
+	-o redirect_dir=followdata,metacopy=on >> $seqres.full 2>&1 && \
+	echo "mount with redirect_dir=followdata,metacopy=on succeeded"
+
+# The directory "/base" in a lower layer without a redirect must not make the
+# lookup forget that the redirect of the metacopy file is absolute.
+echo "== metacopy=on,redirect_dir=follow"
+_scratch_mkfs
+mkdir -p $data/base $l1 $l2
+echo -n "data" > $data/base/file
+touch $l1/file
+$SETFATTR_PROG -n $OVL_XATTR_METACOPY $l1/file
+$SETFATTR_PROG -n $OVL_XATTR_REDIRECT -v /base/file $l1/file
+truncate -s 4 $l1/file
+for f in "" base base/file; do
+	[ "$f" = base ] && mkdir $l2/base
+	[ "$f" = base/file ] && echo -n "lowr" > $l2/base/file
+	_overlay_scratch_mount_dirs "$l1:$l2::$data" - - \
+		-o ro,redirect_dir=follow,metacopy=on
+	echo "lower2 /$f: $(cat $SCRATCH_MNT/file 2>&1 | sed 's/^cat: .*: //')"
+	_unmount $SCRATCH_MNT
+done
+
+# success, all done
+_exit 0
