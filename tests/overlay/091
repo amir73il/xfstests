@@ -1,0 +1,204 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Josef Bacik.  All Rights Reserved.
+#
+# FS QA Test 091
+#
+# Test that syncfs(2) on an overlay, and unmounting one, persist everything
+# that was modified through it.
+#
+# overlayfs used to sync the whole upper filesystem for that.  With
+# fsync=relaxed it only writes the upper inodes that were modified through this
+# overlay, so it has to know about all of them.
+#
+# Modify the overlay in every way we can think of, sync it, shut down the base
+# filesystem without flushing its log, cycle the mounts and check that nothing
+# has changed.
+#
+. ./common/preamble
+_begin_fstest auto quick shutdown copyup whiteout mmap redirect metacopy
+
+. ./common/attr
+
+_require_scratch
+_require_scratch_shutdown
+_require_metadata_journaling $SCRATCH_DEV
+_require_scratch_overlay_features fsync redirect_dir metacopy
+_require_xfs_io_command "syncfs"
+_require_xfs_io_command "sendfile"
+_require_xfs_io_command "copy_range"
+_require_xfs_io_command "falloc"
+_require_xfs_io_command "-T"
+_require_xfs_io_command "flink"
+_require_attrs
+_require_chown
+_require_mknod
+
+lowerdir=$OVL_BASE_SCRATCH_MNT/$OVL_LOWER
+
+create_lower()
+{
+	# This leaves the base filesystem mounted
+	_scratch_mkfs >> $seqres.full 2>&1
+
+	mkdir -p $lowerdir/dir $lowerdir/rmdir $lowerdir/mvdir
+	cd $lowerdir
+	# xfs_io runs the command on every file
+	$XFS_IO_PROG -f -c "pwrite -S 0x6c 0 256k" \
+		append truncate mmap chmod chown chown_append xattr link \
+		rename remove dir/append rmdir/file mvdir/file >> $seqres.full
+	cd - > /dev/null
+
+	# These were not written through the overlay, so it does not have to
+	# sync them.
+	$XFS_IO_PROG -c "syncfs" $OVL_BASE_SCRATCH_MNT
+}
+
+# Creating a file and copying it up are modifications.  overlayfs remembers them
+# until the file is synced, and a later modification that it misses does not
+# show.  So make files that are in the upper layer and have been synced.
+prepare()
+{
+	local m=$SCRATCH_MNT
+
+	mkdir $m/clean
+	cd $m/clean
+	# xfs_io runs the command on every file
+	$XFS_IO_PROG -f -c "pwrite -S 0x70 0 256k" \
+		pwrite truncate fallocate mmap sendfile copy_range chmod \
+		chown xattr link rename remove >> $seqres.full
+	cd - > /dev/null
+	$XFS_IO_PROG -c "syncfs" $m
+}
+
+modify()
+{
+	local m=$SCRATCH_MNT
+
+	# Stores through a shared mapping, also after a syncfs, no msync.  This
+	# has to be the first one, the syncfs must not write anything else.
+	$XFS_IO_PROG -c "mmap -rw 0 256k" -c "mwrite -S 0x66 0 64k" \
+		-c "syncfs" -c "mwrite -S 0x67 64k 64k" $m/mmap >> $seqres.full
+
+	# The files that overlayfs has nothing to remember about
+	$XFS_IO_PROG -c "pwrite -S 0x71 64k 64k" $m/clean/pwrite >> $seqres.full
+	$XFS_IO_PROG -c "truncate 4k" $m/clean/truncate
+	$XFS_IO_PROG -c "falloc 256k 64k" $m/clean/fallocate
+	$XFS_IO_PROG -c "mmap -rw 0 256k" -c "mwrite -S 0x72 64k 64k" \
+		$m/clean/mmap >> $seqres.full
+	$XFS_IO_PROG -c "sendfile -i $m/link 0 64k" $m/clean/sendfile \
+		>> $seqres.full
+	# Not aligned, so that the data is copied and not shared
+	$XFS_IO_PROG -c "copy_range -s 1 -d 1 -l 64k $m/link" \
+		$m/clean/copy_range
+	chmod 640 $m/clean/chmod
+	chown 1234:1234 $m/clean/chown
+	$SETFATTR_PROG -n user.test -v value $m/clean/xattr
+	ln $m/clean/link $m/clean/link2
+	mv $m/clean/rename $m/clean/renamed
+	rm $m/clean/remove
+
+	# New files and directories
+	$XFS_IO_PROG -f -c "pwrite -S 0x61 0 1m" $m/new >> $seqres.full
+	mkdir $m/newdir
+	$XFS_IO_PROG -f -c "pwrite -S 0x62 0 64k" $m/newdir/new >> $seqres.full
+	$XFS_IO_PROG -f -c "pwrite -S 0x63 0 64k" $m/dir/new >> $seqres.full
+	ln -s new $m/symlink
+	# Too long to be stored in the inode
+	ln -s $(printf 'a%.0s' $(seq 1000)) $m/longsymlink
+	mkfifo $m/fifo
+
+	# Copy up, then change the data
+	$XFS_IO_PROG -c "pwrite -S 0x64 256k 64k" $m/append >> $seqres.full
+	$XFS_IO_PROG -c "pwrite -S 0x65 256k 64k" $m/dir/append >> $seqres.full
+	$XFS_IO_PROG -c "truncate 4k" $m/truncate
+
+	# The other ways to write data
+	$XFS_IO_PROG -f -c "sendfile -i $m/link 0 256k" $m/sendfile \
+		>> $seqres.full
+	$XFS_IO_PROG -f -c "copy_range -l 256k $m/link" $m/copy_range
+	$XFS_IO_PROG -T -c "pwrite -S 0x69 0 64k" -c "flink $m/tmpfile" $m \
+		>> $seqres.full
+
+	# Copy up, then change the metadata
+	chmod 640 $m/chmod
+	chown 1234:1234 $m/chown
+	$SETFATTR_PROG -n user.test -v value $m/xattr
+
+	# With metacopy=on the first one only copies up the metadata
+	chown 1234:1234 $m/chown_append
+	$XFS_IO_PROG -c "pwrite -S 0x6a 256k 64k" $m/chown_append \
+		>> $seqres.full
+
+	# Names
+	ln $m/link $m/link2
+	mv $m/rename $m/renamed
+	# Without redirect_dir=on mv gets EXDEV and copies the directory
+	mv $m/mvdir $m/mvdir2
+	rm $m/remove
+	rm -r $m/rmdir
+}
+
+# No inode numbers, no timestamps, and no sizes and link counts of directories
+snapshot()
+{
+	cd $SCRATCH_MNT
+	find . -type d -printf '%p %y %m %U:%G\n' -o \
+		-printf '%p %y %m %U:%G %n %s %l\n' | LC_ALL=C sort
+	find . -type f -print0 | LC_ALL=C sort -z | xargs -0 md5sum
+	_getfattr --absolute-names -n user.test xattr clean/xattr 2>&1
+	cd - > /dev/null
+}
+
+# <syncfs|umount> <mount options>
+do_test()
+{
+	local how=$1
+	local opts=$2
+
+	echo "=== $how $opts" | tee -a $seqres.full
+
+	create_lower
+
+	# An atime update is a modification too.  With atime the snapshot would
+	# make overlayfs write every file that it reads, also one that
+	# overlayfs has lost track of.
+	_scratch_mount -o noatime,$opts
+
+	prepare
+	modify
+	snapshot > $tmp.before
+
+	# Nobody holds on to the overlay inodes when they are synced
+	echo 2 > /proc/sys/vm/drop_caches
+
+	if [ $how = syncfs ]; then
+		$XFS_IO_PROG -c "syncfs" $SCRATCH_MNT
+		_scratch_shutdown | tee -a $seqres.full
+		_scratch_unmount
+	else
+		# Only the overlay, the base filesystem stays mounted
+		_unmount $SCRATCH_MNT
+		_scratch_shutdown | tee -a $seqres.full
+		_unmount $OVL_BASE_SCRATCH_MNT
+	fi
+
+	_scratch_mount -o noatime,$opts
+	snapshot > $tmp.after
+	cat $tmp.after >> $seqres.full
+	diff -u $tmp.before $tmp.after
+	_scratch_unmount
+}
+
+for how in syncfs umount; do
+	for mode in relaxed on; do
+		for meta in off on; do
+			do_test $how \
+				fsync=$mode,redirect_dir=$meta,metacopy=$meta
+		done
+	done
+done
+
+# success, all done
+status=0
+exit

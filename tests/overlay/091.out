@@ -1,0 +1,9 @@
+QA output created by 091
+=== syncfs fsync=relaxed,redirect_dir=off,metacopy=off
+=== syncfs fsync=relaxed,redirect_dir=on,metacopy=on
+=== syncfs fsync=on,redirect_dir=off,metacopy=off
+=== syncfs fsync=on,redirect_dir=on,metacopy=on
+=== umount fsync=relaxed,redirect_dir=off,metacopy=off
+=== umount fsync=relaxed,redirect_dir=on,metacopy=on
+=== umount fsync=on,redirect_dir=off,metacopy=off
+=== umount fsync=on,redirect_dir=on,metacopy=on
