@@ -119,9 +119,11 @@ check_no_file_contents()
 
 	target_f=`echo $target | _filter_scratch`
 	out_f=`cat $target 2>&1 | _filter_scratch`
-	msg="cat: $target_f: No such file or directory"
 
-	[ "$out_f" == "$msg" ] && return
+	# The data is missing: older kernels fail with ENOENT, newer ones
+	# with EIO
+	[ "$out_f" == "cat: $target_f: Input/output error" ] && return
+	[ "$out_f" == "cat: $target_f: No such file or directory" ] && return
 
 	echo "$target_f unexpectedly has content"
 }
