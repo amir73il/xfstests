@@ -1,0 +1,58 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Samsung Electronics. All Rights Reserved.
+#
+# FS QA Test 013
+#
+# Test consistent d_ino of hard links in an impure dir.
+#
+# Overlayfs caches the d_ino of the entries with a copy up origin in a
+# non-merge impure dir. Linking a file with copy up origin into the dir
+# must invalidate that cache, so that readdir reports the new link with
+# the same inode number as stat.
+#
+. ./common/preamble
+_begin_fstest auto quick copyup hardlink
+
+_fixed_by_kernel_commit xxxxxxxxxxxx \
+	"ovl: bump the impure dir version when linking a file with origin"
+
+_require_scratch
+_require_test_program "t_dir_type"
+
+_scratch_mkfs >>$seqres.full 2>&1
+
+lowerdir=$OVL_BASE_SCRATCH_MNT/$OVL_LOWER
+mkdir -p $lowerdir
+touch $lowerdir/foo $lowerdir/bar
+
+_scratch_mount
+
+impure_dir=$SCRATCH_MNT/impure_dir
+mkdir $impure_dir
+
+# Expect readdir of $impure_dir to find <name> by the st_ino of <name>
+check_d_ino()
+{
+	local name=$1
+	local ino=$(stat -c '%i' $impure_dir/$name)
+
+	$here/src/t_dir_type $impure_dir $ino | grep -q "^$name f$" || \
+		echo "readdir d_ino of $name does not match st_ino $ino"
+}
+
+# Copy up foo and link it into the pure upper dir, which makes the dir
+# impure. Then read the dir, so its impure entries get cached.
+ln $SCRATCH_MNT/foo $impure_dir/foo
+check_d_ino foo
+
+# Link foo again inside the dir
+ln $impure_dir/foo $impure_dir/foo_link
+check_d_ino foo_link
+
+# Copy up bar and link it into the dir
+ln $SCRATCH_MNT/bar $impure_dir/bar
+check_d_ino bar
+
+echo "Silence is golden"
+_exit 0
